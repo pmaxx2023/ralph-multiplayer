@@ -3,6 +3,10 @@ import { handle } from 'hono/vercel'
 import { cors } from 'hono/cors'
 import { nanoid } from 'nanoid'
 
+export const config = {
+  runtime: 'edge',
+}
+
 // Types (inlined for Vercel)
 type StoryStatus = 'draft' | 'approved' | 'in_progress' | 'passed' | 'blocked'
 
