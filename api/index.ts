@@ -2,13 +2,61 @@ import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
 import { cors } from 'hono/cors'
 import { nanoid } from 'nanoid'
-import type {
-  Project, Story, AcceptanceCriteria, AgentRun, ProgressEntry,
-  CreateProjectRequest, CreateStoryRequest, UpdateStoryRequest,
-  PRDView, BoardView, StoryStatus
-} from '../packages/shared/src/index'
 
-// In-memory store (resets on cold start - use database for production)
+// Types (inlined for Vercel)
+type StoryStatus = 'draft' | 'approved' | 'in_progress' | 'passed' | 'blocked'
+
+interface Project {
+  id: string
+  name: string
+  goal: string
+  techStack: string[]
+  createdAt: Date
+  createdBy: string
+}
+
+interface Story {
+  id: string
+  projectId: string
+  priority: number
+  title: string
+  description: string
+  status: StoryStatus
+  assignedAgent: string | null
+  approvedBy: string[]
+}
+
+interface AcceptanceCriteria {
+  id: string
+  storyId: string
+  description: string
+  passed: boolean
+  evidence: string | null
+}
+
+interface AgentRun {
+  id: string
+  storyId: string
+  agentType: 'ralph' | 'reviewer' | 'writer'
+  status: 'running' | 'complete' | 'blocked' | 'cancelled'
+  iteration: number
+  maxIterations: number
+  startedAt: Date
+  endedAt: Date | null
+  exitSignal: 'COMPLETE' | 'BLOCKED' | null
+}
+
+interface ProgressEntry {
+  id: string
+  runId: string
+  iteration: number
+  action: string
+  filesChanged: string[]
+  commitSha: string | null
+  timestamp: Date
+}
+
+// In-memory store
 const db = {
   projects: new Map<string, Project>(),
   stories: new Map<string, Story>(),
@@ -21,12 +69,10 @@ const app = new Hono().basePath('/api')
 
 app.use('*', cors())
 
-// Health check
 app.get('/', (c) => c.json({ status: 'ok', service: 'ralph-multiplayer-api' }))
 
-// Projects
 app.post('/projects', async (c) => {
-  const body = await c.req.json<CreateProjectRequest>()
+  const body = await c.req.json<{ name: string; goal: string; techStack: string[] }>()
   const project: Project = {
     id: nanoid(),
     name: body.name,
@@ -49,9 +95,8 @@ app.get('/projects', (c) => {
   return c.json(Array.from(db.projects.values()))
 })
 
-// Stories
 app.post('/stories', async (c) => {
-  const body = await c.req.json<CreateStoryRequest>()
+  const body = await c.req.json<{ projectId: string; title: string; description: string; priority: number; criteria: string[] }>()
   const storyId = nanoid()
 
   const story: Story = {
@@ -90,7 +135,7 @@ app.get('/stories/:id', (c) => {
 
 app.patch('/stories/:id', async (c) => {
   const id = c.req.param('id')
-  const body = await c.req.json<UpdateStoryRequest>()
+  const body = await c.req.json<Partial<Story>>()
   const story = db.stories.get(id)
   if (!story) return c.json({ error: 'Not found' }, 404)
 
@@ -99,13 +144,6 @@ app.patch('/stories/:id', async (c) => {
   return c.json(updated)
 })
 
-app.get('/stories/project/:projectId', (c) => {
-  const projectId = c.req.param('projectId')
-  const stories = Array.from(db.stories.values()).filter(s => s.projectId === projectId)
-  return c.json(stories)
-})
-
-// Views
 app.get('/views/prd/:projectId', (c) => {
   const projectId = c.req.param('projectId')
   const project = db.projects.get(projectId)
@@ -121,39 +159,7 @@ app.get('/views/prd/:projectId', (c) => {
   const activeAgents = Array.from(db.agentRuns.values())
     .filter(r => r.status === 'running' && stories.some(s => s.id === r.storyId))
 
-  const view: PRDView = { project, stories, activeAgents, onlineUsers: [] }
-  return c.json(view)
-})
-
-app.get('/views/prd/:projectId/markdown', (c) => {
-  const projectId = c.req.param('projectId')
-  const project = db.projects.get(projectId)
-  if (!project) return c.json({ error: 'Not found' }, 404)
-
-  const stories = Array.from(db.stories.values())
-    .filter(s => s.projectId === projectId)
-    .map(story => ({
-      ...story,
-      criteria: Array.from(db.criteria.values()).filter(cr => cr.storyId === story.id)
-    }))
-    .sort((a, b) => a.priority - b.priority)
-
-  const emoji: Record<string, string> = {
-    draft: '📝', approved: '✅', in_progress: '🔄', passed: '✓', blocked: '🚫'
-  }
-
-  let md = `# ${project.name}\n\n**Goal:** ${project.goal}\n\n**Tech Stack:** ${project.techStack.join(', ')}\n\n---\n\n## Stories\n\n`
-
-  for (const story of stories) {
-    md += `### ${emoji[story.status] || '•'} Story ${story.priority}: ${story.title}\n\n`
-    md += `${story.description}\n\n**Status:** ${story.status}\n\n**Acceptance Criteria:**\n`
-    for (const cr of story.criteria) {
-      md += `- [${cr.passed ? 'x' : ' '}] ${cr.description}\n`
-    }
-    md += '\n'
-  }
-
-  return c.text(md, 200, { 'Content-Type': 'text/markdown' })
+  return c.json({ project, stories, activeAgents, onlineUsers: [] })
 })
 
 app.get('/views/board/:projectId', (c) => {
@@ -165,11 +171,9 @@ app.get('/views/board/:projectId', (c) => {
   const statuses: StoryStatus[] = ['draft', 'approved', 'in_progress', 'passed', 'blocked']
   const columns = statuses.map(status => ({ status, stories: stories.filter(s => s.status === status) }))
 
-  const view: BoardView = { project, columns, onlineUsers: [] }
-  return c.json(view)
+  return c.json({ project, columns, onlineUsers: [] })
 })
 
-// Agent
 app.post('/agent/start', async (c) => {
   const body = await c.req.json<{ storyId: string; agentType?: string; maxIterations?: number }>()
   const story = db.stories.get(body.storyId)
