@@ -297,6 +297,28 @@ app.patch('/criteria/:id', async (c) => {
   const body = await c.req.json<Partial<AcceptanceCriteria>>()
   const updated = { ...criterion, ...body }
   db.criteria.set(id, updated)
+
+  // Auto-complete: if all criteria passed, mark story as passed
+  if (updated.passed) {
+    const storyCriteria = Array.from(db.criteria.values()).filter(cr => cr.storyId === criterion.storyId)
+    const allPassed = storyCriteria.every(cr => cr.passed)
+
+    if (allPassed) {
+      const story = db.stories.get(criterion.storyId)
+      if (story && story.status !== 'passed') {
+        db.stories.set(criterion.storyId, { ...story, status: 'passed' })
+      }
+    }
+  }
+
+  // If unchecking, revert story from passed if needed
+  if (!updated.passed) {
+    const story = db.stories.get(criterion.storyId)
+    if (story && story.status === 'passed') {
+      db.stories.set(criterion.storyId, { ...story, status: 'in_progress' })
+    }
+  }
+
   return c.json(updated)
 })
 
