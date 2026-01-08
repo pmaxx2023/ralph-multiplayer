@@ -1,0 +1,22 @@
+# Ralph Multiplayer - Progress Log
+
+---
+Iteration: 0
+Story: Setup
+Status: starting
+Actions: Project initialized with PROMPT.md
+---
+
+---
+Iteration: 1
+Story: 1 - Project scaffolded with monorepo structure
+Status: complete
+Actions:
+- Created root package.json with bun workspaces
+- Created tsconfig.json with project references
+- Created packages/shared with domain types
+- Created packages/api with Hono server, routes, Drizzle schema
+- Created packages/web with React + Vite + Tailwind
+- Created packages/party with PartyKit server
+- All TypeScript configured for monorepo
+---

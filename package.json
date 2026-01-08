@@ -1,0 +1,22 @@
+{
+  "name": "ralph-multiplayer",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel dev:api dev:web",
+    "dev:api": "bun run --filter @ralph/api dev",
+    "dev:web": "bun run --filter @ralph/web dev",
+    "build": "cd packages/web && bun run build",
+    "vercel-build": "cd packages/web && npm install && npm run build"
+  },
+  "dependencies": {
+    "hono": "^4.3.0",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@vercel/node": "^3.0.0"
+  }
+}
