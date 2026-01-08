@@ -249,4 +249,34 @@ app.post('/agent/complete', async (c) => {
   return c.json(updated)
 })
 
+// Add criterion to story
+app.post('/stories/:id/criteria', async (c) => {
+  const storyId = c.req.param('id')
+  const story = db.stories.get(storyId)
+  if (!story) return c.json({ error: 'Story not found' }, 404)
+
+  const body = await c.req.json<{ description: string }>()
+  const criterion: AcceptanceCriteria = {
+    id: nanoid(),
+    storyId,
+    description: body.description,
+    passed: false,
+    evidence: null,
+  }
+  db.criteria.set(criterion.id, criterion)
+  return c.json(criterion, 201)
+})
+
+// Update criterion
+app.patch('/criteria/:id', async (c) => {
+  const id = c.req.param('id')
+  const criterion = db.criteria.get(id)
+  if (!criterion) return c.json({ error: 'Criterion not found' }, 404)
+
+  const body = await c.req.json<Partial<AcceptanceCriteria>>()
+  const updated = { ...criterion, ...body }
+  db.criteria.set(id, updated)
+  return c.json(updated)
+})
+
 export default handle(app)
