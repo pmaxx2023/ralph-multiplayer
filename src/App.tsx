@@ -1,21 +1,40 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { PRDView, BoardView } from './types'
 import { PRDDocument } from './components/PRDDocument'
 import { BoardViewComponent } from './components/BoardView'
-import { PresenceBar } from './components/PresenceBar'
-import { usePartySocket } from './hooks/usePartySocket'
+import { Cursors, CursorPresenceBar } from './components/Cursors'
+import { RoomProvider, useUpdateMyPresence } from './liveblocks.config'
 
 type ViewMode = 'prd' | 'board'
 
-function App() {
+// Random user identity
+function generateUser() {
+  const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry']
+  const colors = ['#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#009688', '#ff5722', '#795548']
+  return {
+    name: names[Math.floor(Math.random() * names.length)],
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }
+}
+
+function AppContent() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('prd')
   const [prdData, setPrdData] = useState<PRDView | null>(null)
   const [boardData, setBoardData] = useState<BoardView | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // Real-time connection
-  const { presence } = usePartySocket(projectId)
+  const user = useMemo(() => generateUser(), [])
+  const updateMyPresence = useUpdateMyPresence()
+
+  // Set initial presence
+  useEffect(() => {
+    updateMyPresence({
+      name: user.name,
+      color: user.color,
+      cursor: null,
+    })
+  }, [user, updateMyPresence])
 
   // Fetch project data
   const fetchData = useCallback(async () => {
@@ -46,7 +65,6 @@ function App() {
 
   // Demo: create project with sample stories
   const createDemoProject = async () => {
-    // Create project
     const projectRes = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,7 +76,6 @@ function App() {
     })
     const project = await projectRes.json()
 
-    // Create sample stories
     await fetch('/api/stories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -115,7 +132,10 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-3xl font-bold mb-4">Ralph Multiplayer</h1>
-          <p className="text-gray-600 mb-8">Documents that can't go stale</p>
+          <p className="text-gray-600 mb-2">Documents that can't go stale</p>
+          <p className="text-sm text-gray-400 mb-8">
+            You are <span className="font-medium" style={{ color: user.color }}>{user.name}</span>
+          </p>
           <button
             onClick={createDemoProject}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -129,8 +149,11 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Live cursors layer */}
+      <Cursors />
+
       {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-40">
         <div>
           <h1 className="text-xl font-semibold">{prdData?.project.name || 'Loading...'}</h1>
           <p className="text-sm text-gray-500">{prdData?.project.goal}</p>
@@ -156,7 +179,7 @@ function App() {
             </button>
           </div>
           {/* Presence */}
-          <PresenceBar users={presence} />
+          <CursorPresenceBar />
         </div>
       </header>
 
@@ -173,6 +196,18 @@ function App() {
         )}
       </main>
     </div>
+  )
+}
+
+function App() {
+  // Use a fixed room for demo - in production, use projectId
+  return (
+    <RoomProvider
+      id="ralph-multiplayer-demo"
+      initialPresence={{ cursor: null, name: '', color: '' }}
+    >
+      <AppContent />
+    </RoomProvider>
   )
 }
 
