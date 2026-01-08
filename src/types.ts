@@ -7,6 +7,23 @@ export type AgentRunId = string
 export type StoryStatus = 'draft' | 'approved' | 'in_progress' | 'passed' | 'blocked'
 export type AgentStatus = 'running' | 'complete' | 'blocked' | 'cancelled'
 
+export interface Assignee {
+  id: string
+  type: 'human' | 'agent'
+  name: string
+  color: string
+  avatar?: string
+}
+
+export interface TeamMember {
+  id: string
+  projectId: ProjectId
+  type: 'human' | 'agent'
+  name: string
+  color: string
+  avatar?: string
+}
+
 export interface Project {
   id: ProjectId
   name: string
@@ -23,7 +40,7 @@ export interface Story {
   title: string
   description: string
   status: StoryStatus
-  assignedAgent: AgentRunId | null
+  assignees: Assignee[]
   approvedBy: UserId[]
 }
 
@@ -93,6 +110,7 @@ export interface PRDView {
   stories: (Story & { criteria: AcceptanceCriteria[] })[]
   activeAgents: AgentRun[]
   onlineUsers: UserPresence[]
+  teamMembers: TeamMember[]
 }
 
 export interface BoardView {
@@ -102,4 +120,5 @@ export interface BoardView {
     stories: Story[]
   }[]
   onlineUsers: UserPresence[]
+  teamMembers: TeamMember[]
 }

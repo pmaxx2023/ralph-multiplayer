@@ -10,6 +10,14 @@ export const config = {
 // Types (inlined for Vercel)
 type StoryStatus = 'draft' | 'approved' | 'in_progress' | 'passed' | 'blocked'
 
+interface Assignee {
+  id: string
+  type: 'human' | 'agent'
+  name: string
+  color: string
+  avatar?: string
+}
+
 interface Project {
   id: string
   name: string
@@ -19,6 +27,15 @@ interface Project {
   createdBy: string
 }
 
+interface TeamMember {
+  id: string
+  projectId: string
+  type: 'human' | 'agent'
+  name: string
+  color: string
+  avatar?: string
+}
+
 interface Story {
   id: string
   projectId: string
@@ -26,7 +43,7 @@ interface Story {
   title: string
   description: string
   status: StoryStatus
-  assignedAgent: string | null
+  assignees: Assignee[]
   approvedBy: string[]
 }
 
@@ -67,6 +84,7 @@ const db = {
   criteria: new Map<string, AcceptanceCriteria>(),
   agentRuns: new Map<string, AgentRun>(),
   progressEntries: new Map<string, ProgressEntry>(),
+  teamMembers: new Map<string, TeamMember>(),
 }
 
 const app = new Hono().basePath('/api')
@@ -110,7 +128,7 @@ app.post('/stories', async (c) => {
     description: body.description,
     priority: body.priority,
     status: 'draft',
-    assignedAgent: null,
+    assignees: [],
     approvedBy: [],
   }
   db.stories.set(storyId, story)
@@ -163,7 +181,9 @@ app.get('/views/prd/:projectId', (c) => {
   const activeAgents = Array.from(db.agentRuns.values())
     .filter(r => r.status === 'running' && stories.some(s => s.id === r.storyId))
 
-  return c.json({ project, stories, activeAgents, onlineUsers: [] })
+  const teamMembers = Array.from(db.teamMembers.values()).filter(m => m.projectId === projectId)
+
+  return c.json({ project, stories, activeAgents, onlineUsers: [], teamMembers })
 })
 
 app.get('/views/board/:projectId', (c) => {
@@ -175,7 +195,9 @@ app.get('/views/board/:projectId', (c) => {
   const statuses: StoryStatus[] = ['draft', 'approved', 'in_progress', 'passed', 'blocked']
   const columns = statuses.map(status => ({ status, stories: stories.filter(s => s.status === status) }))
 
-  return c.json({ project, columns, onlineUsers: [] })
+  const teamMembers = Array.from(db.teamMembers.values()).filter(m => m.projectId === projectId)
+
+  return c.json({ project, columns, onlineUsers: [], teamMembers })
 })
 
 app.post('/agent/start', async (c) => {
@@ -242,7 +264,6 @@ app.post('/agent/complete', async (c) => {
     db.stories.set(run.storyId, {
       ...story,
       status: body.exitSignal === 'COMPLETE' ? 'passed' : 'blocked',
-      assignedAgent: null,
     })
   }
 
@@ -276,6 +297,89 @@ app.patch('/criteria/:id', async (c) => {
   const body = await c.req.json<Partial<AcceptanceCriteria>>()
   const updated = { ...criterion, ...body }
   db.criteria.set(id, updated)
+  return c.json(updated)
+})
+
+// ============ Team Members ============
+
+// Get team members for a project
+app.get('/projects/:id/team', (c) => {
+  const projectId = c.req.param('id')
+  const members = Array.from(db.teamMembers.values()).filter(m => m.projectId === projectId)
+  return c.json(members)
+})
+
+// Add team member to project
+app.post('/projects/:id/team', async (c) => {
+  const projectId = c.req.param('id')
+  const project = db.projects.get(projectId)
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+
+  const body = await c.req.json<{ name: string; type: 'human' | 'agent'; color?: string; avatar?: string }>()
+  const colors = ['#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#009688', '#ff5722', '#795548']
+
+  const member: TeamMember = {
+    id: nanoid(),
+    projectId,
+    type: body.type,
+    name: body.name,
+    color: body.color || colors[Math.floor(Math.random() * colors.length)],
+    avatar: body.avatar,
+  }
+  db.teamMembers.set(member.id, member)
+  return c.json(member, 201)
+})
+
+// Remove team member
+app.delete('/team/:id', (c) => {
+  const id = c.req.param('id')
+  if (!db.teamMembers.has(id)) return c.json({ error: 'Member not found' }, 404)
+  db.teamMembers.delete(id)
+  return c.json({ success: true })
+})
+
+// ============ Story Assignments ============
+
+// Assign member to story
+app.post('/stories/:id/assign', async (c) => {
+  const storyId = c.req.param('id')
+  const story = db.stories.get(storyId)
+  if (!story) return c.json({ error: 'Story not found' }, 404)
+
+  const body = await c.req.json<{ memberId: string }>()
+  const member = db.teamMembers.get(body.memberId)
+  if (!member) return c.json({ error: 'Member not found' }, 404)
+
+  // Check if already assigned
+  if (story.assignees.some(a => a.id === member.id)) {
+    return c.json({ error: 'Already assigned' }, 400)
+  }
+
+  const assignee: Assignee = {
+    id: member.id,
+    type: member.type,
+    name: member.name,
+    color: member.color,
+    avatar: member.avatar,
+  }
+
+  const updated = { ...story, assignees: [...story.assignees, assignee] }
+  db.stories.set(storyId, updated)
+  return c.json(updated)
+})
+
+// Unassign member from story
+app.post('/stories/:id/unassign', async (c) => {
+  const storyId = c.req.param('id')
+  const story = db.stories.get(storyId)
+  if (!story) return c.json({ error: 'Story not found' }, 404)
+
+  const body = await c.req.json<{ memberId: string }>()
+  const updated = {
+    ...story,
+    assignees: story.assignees.filter(a => a.id !== body.memberId)
+  }
+  db.stories.set(storyId, updated)
   return c.json(updated)
 })
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { PRDView, Story, AcceptanceCriteria } from '../types'
+import type { PRDView, Story, AcceptanceCriteria, TeamMember, Assignee } from '../types'
 
 interface PRDDocumentProps {
   data: PRDView
@@ -7,9 +7,11 @@ interface PRDDocumentProps {
 }
 
 export function PRDDocument({ data, onUpdate }: PRDDocumentProps) {
-  const { project, stories, activeAgents } = data
+  const { project, stories, activeAgents, teamMembers } = data
   const [addingStory, setAddingStory] = useState(false)
   const [newStory, setNewStory] = useState({ title: '', description: '', criteria: '' })
+  const [showTeamPanel, setShowTeamPanel] = useState(false)
+  const [newMember, setNewMember] = useState({ name: '', type: 'human' as 'human' | 'agent' })
 
   const handleAddStory = async () => {
     if (!newStory.title.trim()) return
@@ -30,91 +32,166 @@ export function PRDDocument({ data, onUpdate }: PRDDocumentProps) {
     onUpdate()
   }
 
-  return (
-    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border p-8">
-      {/* Header */}
-      <div className="mb-8 pb-6 border-b">
-        <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
-        <p className="text-gray-600 mb-4">{project.goal}</p>
-        <div className="flex gap-2">
-          {project.techStack.map((tech) => (
-            <span
-              key={tech}
-              className="px-2 py-1 bg-gray-100 text-gray-700 text-sm rounded"
-            >
-              {tech}
-            </span>
-          ))}
-        </div>
-      </div>
+  const handleAddMember = async () => {
+    if (!newMember.name.trim()) return
 
-      {/* Stories */}
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Stories</h2>
+    await fetch(`/api/projects/${project.id}/team`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMember),
+    })
+    setNewMember({ name: '', type: 'human' })
+    onUpdate()
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* Team Panel */}
+      <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium">Team</h3>
           <button
-            onClick={() => setAddingStory(true)}
-            className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded"
+            onClick={() => setShowTeamPanel(!showTeamPanel)}
+            className="text-sm text-blue-600 hover:underline"
           >
-            + Add Story
+            {showTeamPanel ? 'Hide' : 'Manage'}
           </button>
         </div>
 
-        {addingStory && (
-          <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 bg-blue-50">
-            <input
-              type="text"
-              placeholder="Story title..."
-              value={newStory.title}
-              onChange={(e) => setNewStory({ ...newStory, title: e.target.value })}
-              className="w-full text-lg font-semibold mb-3 p-2 border rounded"
-              autoFocus
-            />
-            <textarea
-              placeholder="Description..."
-              value={newStory.description}
-              onChange={(e) => setNewStory({ ...newStory, description: e.target.value })}
-              className="w-full mb-3 p-2 border rounded resize-none"
-              rows={2}
-            />
-            <textarea
-              placeholder="Acceptance criteria (one per line)..."
-              value={newStory.criteria}
-              onChange={(e) => setNewStory({ ...newStory, criteria: e.target.value })}
-              className="w-full mb-3 p-2 border rounded resize-none text-sm"
-              rows={3}
-            />
+        <div className="flex flex-wrap gap-2">
+          {teamMembers.map((member) => (
+            <div
+              key={member.id}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+              style={{ backgroundColor: `${member.color}20`, color: member.color }}
+            >
+              <span className={member.type === 'agent' ? 'opacity-70' : ''}>
+                {member.type === 'agent' ? '🤖' : '👤'}
+              </span>
+              {member.name}
+            </div>
+          ))}
+          {teamMembers.length === 0 && (
+            <span className="text-gray-400 text-sm">No team members yet</span>
+          )}
+        </div>
+
+        {showTeamPanel && (
+          <div className="mt-4 pt-4 border-t">
             <div className="flex gap-2">
-              <button
-                onClick={handleAddStory}
-                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+              <input
+                type="text"
+                placeholder="Name..."
+                value={newMember.name}
+                onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
+                className="flex-1 px-3 py-2 border rounded text-sm"
+              />
+              <select
+                value={newMember.type}
+                onChange={(e) => setNewMember({ ...newMember, type: e.target.value as 'human' | 'agent' })}
+                className="px-3 py-2 border rounded text-sm"
               >
-                Add Story
-              </button>
+                <option value="human">Human</option>
+                <option value="agent">Agent</option>
+              </select>
               <button
-                onClick={() => { setAddingStory(false); setNewStory({ title: '', description: '', criteria: '' }) }}
-                className="px-3 py-1.5 text-gray-600 text-sm hover:bg-gray-100 rounded"
+                onClick={handleAddMember}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
               >
-                Cancel
+                Add
               </button>
             </div>
           </div>
         )}
+      </div>
 
-        {stories.length === 0 && !addingStory ? (
-          <p className="text-gray-500">No stories yet. Add one to get started.</p>
-        ) : (
-          stories
-            .sort((a, b) => a.priority - b.priority)
-            .map((story) => (
-              <StoryCard
-                key={story.id}
-                story={story}
-                activeAgent={activeAgents.find((a) => a.storyId === story.id)}
-                onUpdate={onUpdate}
+      {/* Main PRD */}
+      <div className="bg-white rounded-lg shadow-sm border p-8">
+        {/* Header */}
+        <div className="mb-8 pb-6 border-b">
+          <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
+          <p className="text-gray-600 mb-4">{project.goal}</p>
+          <div className="flex gap-2">
+            {project.techStack.map((tech) => (
+              <span
+                key={tech}
+                className="px-2 py-1 bg-gray-100 text-gray-700 text-sm rounded"
+              >
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Stories */}
+        <div className="space-y-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Stories</h2>
+            <button
+              onClick={() => setAddingStory(true)}
+              className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded"
+            >
+              + Add Story
+            </button>
+          </div>
+
+          {addingStory && (
+            <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 bg-blue-50">
+              <input
+                type="text"
+                placeholder="Story title..."
+                value={newStory.title}
+                onChange={(e) => setNewStory({ ...newStory, title: e.target.value })}
+                className="w-full text-lg font-semibold mb-3 p-2 border rounded"
+                autoFocus
               />
-            ))
-        )}
+              <textarea
+                placeholder="Description..."
+                value={newStory.description}
+                onChange={(e) => setNewStory({ ...newStory, description: e.target.value })}
+                className="w-full mb-3 p-2 border rounded resize-none"
+                rows={2}
+              />
+              <textarea
+                placeholder="Acceptance criteria (one per line)..."
+                value={newStory.criteria}
+                onChange={(e) => setNewStory({ ...newStory, criteria: e.target.value })}
+                className="w-full mb-3 p-2 border rounded resize-none text-sm"
+                rows={3}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddStory}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                >
+                  Add Story
+                </button>
+                <button
+                  onClick={() => { setAddingStory(false); setNewStory({ title: '', description: '', criteria: '' }) }}
+                  className="px-3 py-1.5 text-gray-600 text-sm hover:bg-gray-100 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stories.length === 0 && !addingStory ? (
+            <p className="text-gray-500">No stories yet. Add one to get started.</p>
+          ) : (
+            stories
+              .sort((a, b) => a.priority - b.priority)
+              .map((story) => (
+                <StoryCard
+                  key={story.id}
+                  story={story}
+                  activeAgent={activeAgents.find((a) => a.storyId === story.id)}
+                  teamMembers={teamMembers}
+                  onUpdate={onUpdate}
+                />
+              ))
+          )}
+        </div>
       </div>
     </div>
   )
@@ -123,16 +200,18 @@ export function PRDDocument({ data, onUpdate }: PRDDocumentProps) {
 interface StoryCardProps {
   story: Story & { criteria: AcceptanceCriteria[] }
   activeAgent?: { iteration: number; status: string }
+  teamMembers: TeamMember[]
   onUpdate: () => void
 }
 
-function StoryCard({ story, activeAgent, onUpdate }: StoryCardProps) {
+function StoryCard({ story, activeAgent, teamMembers, onUpdate }: StoryCardProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
   const [title, setTitle] = useState(story.title)
   const [description, setDescription] = useState(story.description)
   const [addingCriteria, setAddingCriteria] = useState(false)
   const [newCriteria, setNewCriteria] = useState('')
+  const [showAssignDropdown, setShowAssignDropdown] = useState(false)
 
   const statusConfig: Record<string, { emoji: string; color: string }> = {
     draft: { emoji: '📝', color: 'bg-gray-100 text-gray-700' },
@@ -143,6 +222,10 @@ function StoryCard({ story, activeAgent, onUpdate }: StoryCardProps) {
   }
 
   const { emoji, color } = statusConfig[story.status] || { emoji: '•', color: 'bg-gray-100' }
+
+  const unassignedMembers = teamMembers.filter(
+    m => !story.assignees.some(a => a.id === m.id)
+  )
 
   const saveTitle = async () => {
     if (title !== story.title) {
@@ -198,6 +281,25 @@ function StoryCard({ story, activeAgent, onUpdate }: StoryCardProps) {
     onUpdate()
   }
 
+  const handleAssign = async (memberId: string) => {
+    await fetch(`/api/stories/${story.id}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId }),
+    })
+    setShowAssignDropdown(false)
+    onUpdate()
+  }
+
+  const handleUnassign = async (memberId: string) => {
+    await fetch(`/api/stories/${story.id}/unassign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId }),
+    })
+    onUpdate()
+  }
+
   return (
     <div className="border rounded-lg p-6 hover:shadow-md transition-shadow">
       {/* Story header */}
@@ -235,6 +337,56 @@ function StoryCard({ story, activeAgent, onUpdate }: StoryCardProps) {
             Agent working (iteration {activeAgent.iteration})
           </div>
         )}
+      </div>
+
+      {/* Assignees */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <span className="text-sm text-gray-500">Assigned:</span>
+        {story.assignees.map((assignee) => (
+          <div
+            key={assignee.id}
+            className="flex items-center gap-1 px-2 py-1 rounded-full text-xs group"
+            style={{ backgroundColor: `${assignee.color}20`, color: assignee.color }}
+          >
+            {assignee.type === 'agent' ? '🤖' : '👤'}
+            {assignee.name}
+            <button
+              onClick={() => handleUnassign(assignee.id)}
+              className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-white/50 rounded-full w-4 h-4 flex items-center justify-center"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <div className="relative">
+          <button
+            onClick={() => setShowAssignDropdown(!showAssignDropdown)}
+            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+          >
+            + Assign
+          </button>
+          {showAssignDropdown && unassignedMembers.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-10 min-w-[150px]">
+              {unassignedMembers.map((member) => (
+                <button
+                  key={member.id}
+                  onClick={() => handleAssign(member.id)}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span style={{ color: member.color }}>
+                    {member.type === 'agent' ? '🤖' : '👤'}
+                  </span>
+                  {member.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {showAssignDropdown && unassignedMembers.length === 0 && (
+            <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-10 p-3 text-sm text-gray-500">
+              No unassigned members
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Description */}
