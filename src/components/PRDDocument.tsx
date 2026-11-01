@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { PRDView, Story, AcceptanceCriteria, TeamMember, Assignee } from '../types'
+import type { PRDView, Story, AcceptanceCriteria, TeamMember } from '../types'
 
 interface PRDDocumentProps {
   data: PRDView

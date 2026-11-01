@@ -24,6 +24,18 @@ export function BoardViewComponent({ data, onUpdate }: BoardViewComponentProps) 
           <div
             key={column.status}
             className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={async (e) => {
+              e.preventDefault()
+              const storyId = e.dataTransfer.getData('storyId')
+              if (!storyId) return
+              await fetch(`/api/stories/${storyId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: column.status }),
+              })
+              onUpdate()
+            }}
           >
             {/* Column header */}
             <div className="flex items-center gap-2 mb-4">
@@ -42,7 +54,6 @@ export function BoardViewComponent({ data, onUpdate }: BoardViewComponentProps) 
                   <StoryCard
                     key={story.id}
                     story={story}
-                    onUpdate={onUpdate}
                   />
                 ))}
             </div>
@@ -60,10 +71,9 @@ export function BoardViewComponent({ data, onUpdate }: BoardViewComponentProps) 
 
 interface StoryCardProps {
   story: Story
-  onUpdate: () => void
 }
 
-function StoryCard({ story, onUpdate }: StoryCardProps) {
+function StoryCard({ story }: StoryCardProps) {
   return (
     <div
       className="bg-white rounded-lg shadow-sm border p-4 cursor-grab active:cursor-grabbing"

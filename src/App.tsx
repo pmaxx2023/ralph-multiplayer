@@ -48,6 +48,11 @@ function AppContent() {
 
       const res = await fetch(endpoint)
       const data = await res.json()
+      if (!res.ok) {
+        setPrdData(null)
+        setBoardData(null)
+        return
+      }
 
       if (viewMode === 'prd') {
         setPrdData(data)

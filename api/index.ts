@@ -45,6 +45,7 @@ interface Story {
   status: StoryStatus
   assignees: Assignee[]
   approvedBy: string[]
+  assignedAgent?: string
 }
 
 interface AcceptanceCriteria {

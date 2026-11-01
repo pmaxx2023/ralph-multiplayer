@@ -42,6 +42,7 @@ export interface Story {
   status: StoryStatus
   assignees: Assignee[]
   approvedBy: UserId[]
+  assignedAgent?: AgentRunId
 }
 
 export interface AcceptanceCriteria {
