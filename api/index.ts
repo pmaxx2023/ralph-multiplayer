@@ -406,4 +406,47 @@ app.post('/stories/:id/unassign', async (c) => {
   return c.json(updated)
 })
 
+// Snapshot and restore. The store lives in memory, so a cold start or a
+// different instance can lose a project. The browser keeps a snapshot from
+// export and sends it back through import when the server has lost it.
+app.get('/projects/:id/export', (c) => {
+  const id = c.req.param('id')
+  const project = db.projects.get(id)
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  const stories = [...db.stories.values()].filter(s => s.projectId === id)
+  const storyIds = new Set(stories.map(s => s.id))
+  const criteria = [...db.criteria.values()].filter(cr => storyIds.has(cr.storyId))
+  const agentRuns = [...db.agentRuns.values()].filter(r => storyIds.has(r.storyId))
+  const runIds = new Set(agentRuns.map(r => r.id))
+  const progressEntries = [...db.progressEntries.values()].filter(e => runIds.has(e.runId))
+  const teamMembers = [...db.teamMembers.values()].filter(m => m.projectId === id)
+  return c.json({ version: 1, project, stories, criteria, agentRuns, progressEntries, teamMembers })
+})
+
+app.post('/import', async (c) => {
+  const snap = await c.req.json<any>().catch(() => null)
+  const project = snap?.project
+  if (!project?.id || typeof project.id !== 'string') return c.json({ error: 'Invalid snapshot' }, 400)
+  const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 500) : [])
+  const stories = list(snap.stories).filter((s: any) => s?.id && s.projectId === project.id)
+  const storyIds = new Set(stories.map((s: any) => s.id))
+  const criteria = list(snap.criteria).filter((cr: any) => cr?.id && storyIds.has(cr.storyId))
+  const agentRuns = list(snap.agentRuns).filter((r: any) => r?.id && storyIds.has(r.storyId))
+  const runIds = new Set(agentRuns.map((r: any) => r.id))
+  const progressEntries = list(snap.progressEntries).filter((e: any) => e?.id && runIds.has(e.runId))
+  const teamMembers = list(snap.teamMembers).filter((m: any) => m?.id && m.projectId === project.id)
+
+  // Never overwrite what this instance already has; only fill gaps.
+  const fill = <T,>(map: Map<string, T>, rows: any[]) => {
+    for (const row of rows) if (!map.has(row.id)) map.set(row.id, row as T)
+  }
+  if (!db.projects.has(project.id)) db.projects.set(project.id, project)
+  fill(db.stories, stories)
+  fill(db.criteria, criteria)
+  fill(db.agentRuns, agentRuns)
+  fill(db.progressEntries, progressEntries)
+  fill(db.teamMembers, teamMembers)
+  return c.json({ restored: true, projectId: project.id })
+})
+
 export default handle(app)

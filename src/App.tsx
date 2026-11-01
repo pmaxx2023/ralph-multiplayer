@@ -17,8 +17,41 @@ function generateUser() {
   }
 }
 
+const PROJECT_KEY = 'ralph-project-id'
+const snapshotKey = (id: string) => `ralph-snapshot-${id}`
+
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStored(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // storage blocked; the app still works for this session
+  }
+}
+
+async function saveSnapshot(projectId: string) {
+  try {
+    const res = await fetch(`/api/projects/${projectId}/export`)
+    if (res.ok) writeStored(snapshotKey(projectId), await res.text())
+  } catch {
+    // best effort
+  }
+}
+
 function AppContent() {
-  const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectId, setProjectIdState] = useState<string | null>(() => readStored(PROJECT_KEY))
+  const setProjectId = useCallback((id: string | null) => {
+    setProjectIdState(id)
+    writeStored(PROJECT_KEY, id)
+  }, [])
   const [viewMode, setViewMode] = useState<ViewMode>('prd')
   const [prdData, setPrdData] = useState<PRDView | null>(null)
   const [boardData, setBoardData] = useState<BoardView | null>(null)
@@ -46,13 +79,25 @@ function AppContent() {
         ? `/api/views/prd/${projectId}`
         : `/api/views/board/${projectId}`
 
-      const res = await fetch(endpoint)
+      let res = await fetch(endpoint)
+      // The server keeps data in memory. If it lost this project, restore
+      // it from the last snapshot this browser saved, then try again.
+      if (res.status === 404) {
+        const snapshot = readStored(snapshotKey(projectId))
+        if (snapshot) {
+          await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: snapshot })
+          res = await fetch(endpoint)
+        }
+      }
       const data = await res.json()
       if (!res.ok) {
         setPrdData(null)
         setBoardData(null)
+        // Gone for good: go back to the start screen instead of a blank page.
+        if (res.status === 404) setProjectId(null)
         return
       }
+      saveSnapshot(projectId)
 
       if (viewMode === 'prd') {
         setPrdData(data)
@@ -62,7 +107,7 @@ function AppContent() {
     } finally {
       setLoading(false)
     }
-  }, [projectId, viewMode])
+  }, [projectId, viewMode, setProjectId])
 
   useEffect(() => {
     fetchData()
